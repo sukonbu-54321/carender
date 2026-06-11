@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width initial-scale=1.0">
+    <title>すこんぶのスケジュールカレンダー</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+  <!-- ✅ ログイン画面 -->
+  <div id="login-section">
+    <h2>ログイン</h2>
+    <input type="email" id="loginEmail" placeholder="メールアドレス">
+    <input type="password" id="loginPassword" placeholder="パスワード">
+    <button id="signupBtn" onclick="signup()">新規登録</button>
+    <button id="loginBtn" onclick="login()">ログイン</button>
+    <p id="loginStatus"></p>
+  </div>
+
+  <!-- ✅ ログイン後だけ表示されるメイン画面 -->
+  <div id="mainApp" style="display:none;">
+    <header>
+    <h1>すこんぶの３年計画</h1>
+    <div class="nav">
+      <button id="prevMonth"class="nav-btn">←</button>
+      <span id="monthDisplay">2025年10月</span>
+      <button id="nextMonth"class="nav-btn">→</button>
+    </div>
+    <input id="search" type="text" placeholder="タスク名・タグで検索">
+    </header>
+
+    <section id="streakAndToday">
+      <div id="streakDisplay" class="streak-box">🔥 0日連続</div>
+      <section id="todaySummary" class="today-box"></section>
+    </section>
+    <h1>
+  すこんぶの目標カレンダー 
+  <span id="remainingDays" style="font-size:0.9rem; color:#ccc; margin-left:10px; font-size: 17px"></span>
+</h1>
+
+<section id="goalBoard">
+      <div id="fixedGoals">
+      <h2>🎯 3年間ロードマップ目標</h2>
+      <ul id="roadmapDisplay">
+        <li id="goal2025Text"><strong>2025年度：</strong> ITパスポート合格・HTML/CSS/JS習得</li>
+        <li id="goal2026Text"><strong>2026年度：</strong> 簿記3級・React/Vue/Python学習・アプリ制作</li>
+        <li id="goal2027Text"><strong>2027年度：</strong> 基本情報技術者・ポートフォリオ完成・副業収益化</li>
+      </ul>
+      </div>
+
+      <div id="goalDisplay">
+        <p>📅 <strong>今月の目標：</strong>
+          <input type="checkbox" id="monthlyGoalCheck" />
+          <span id="monthlyGoalText">未設定</span>
+        </p>
+        <p>🗓 <strong>今週の目標：</strong>
+          <input type="checkbox" id="weeklyGoalCheck" />
+          <span id="weeklyGoalText">未設定</span>
+        </p>
+      </div>
+
+      <button id="toggleEditBtn" class="action-btn">⚙️ 目標を編集する</button>
+
+      <div id="editableGoals" class="hidden-area">
+        <h3>🗓 目標の設定</h3>
+        
+        <label>2025年度の目標</label>
+        <textarea id="goal2025Input"></textarea>
+
+        <label>2026年度の目標</label>
+        <textarea id="goal2026Input"></textarea>
+
+        <label>2027年度の目標</label>
+        <textarea id="goal2027Input"></textarea>
+
+        <hr>
+
+        <label>今月の目標</label>
+        <textarea id="monthlyGoalInput"></textarea>
+
+        <label>今週の目標</label>
+        <textarea id="weeklyGoalInput"></textarea>
+
+        <button id="saveGoals" class="save-btn">💾 設定を保存</button>
+      </div>
+      </section>
+
+    <div class="container">
+    <aside>
+  <h2>カテゴリー</h2>
+  <ul id="filters">
+        <li data-category="資格">資格</li>
+        <li data-category="スキル">スキル</li>
+        <li data-category="副業">副業</li>
+        <li data-category="投資">投資</li>
+    </ul>
+
+      <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress" id="progressBar" style="width:60%"></div>
+      </div>
+      <p id="progressLabel">全体進歩: 60%</p>
+      </div>
+
+      <button id="addCategoryBtn" style="width: 100%; margin-top: 10px;">＋ 新しいカテゴリー</button>
+</aside>
+
+    <main id="calendar"></main>
+
+    <section id="routineSection">
+  <h2>ルーティン設定</h2>
+
+  <!-- ✅ 時計の位置 -->
+  <div id="routineClock" class="clock"></div>
+
+  <div class="routine-buttons">
+    <button id="weekdayBtn">平日ルーティン</button>
+    <button id="weekendBtn">休日ルーティン</button>
+  </div>
+
+  <div id="routineContainer" style="position: relative;">
+    <div id="currentTimeLabel"></div>
+    <ul id="routineList"></ul>
+  </div>
+
+  <div class="routine-actions">
+    <button id="editRoutine">✏️ 編集</button>
+    <button id="saveRoutine">💾 内容初期化</button>
+    <button id="resetRoutine">♻️ チェック外す</button>
+  </div>
+</section>
+
+    <section id="taskListSection" class="hidden">
+      <h2 id="taskListTitle">選択した日のタスク</h2>
+      <ul id="taskList"></ul>
+    </section>
+  </div>
+
+    <div id="taskModal" class="modal hidden">
+      <input id="taskTitle" placeholder="タイトル">
+      <select id="taskCategory">
+        <option>資格</option>
+        <option>スキル</option>
+        <option>副業</option>
+        <option>投資</option>
+      </select>
+      <select id="taskPriority">
+        <option>高</option>
+        <option>中</option>
+        <option>低</option>
+      </select>
+      <input type="range" id="taskProgress" min="0" max="100" value="0">
+      <textarea id="taskMemo" placeholder="メモ"></textarea>
+      <button id="saveTask">保存</button>
+      <button id="closeModal">閉じる</button>
+    </div>
+
+    <section id="weeklySection">
+      <h2>🗓 今週のタスク</h2>
+      <ul id="weeklyTaskList"></ul>
+    </section>
+
+    <a href="https://thinktank-54321.web.app/" class="url">知識ノートアプリ</a>
+    <a href="https://sukonbu-kakeibo.web.app/" class="url">家計簿アプリ</a>
+    <a href="https://studyquest-54321.web.app/" class="url">勉強管理アプリ</a>
+
+     <div id="logout-section">
+  <button id="logoutBtn" onclick="logout()">ログアウト</button>
+    </div>
+    <script type="module" src="script.js"></script>
+    </div>
+  </body>
+</html>

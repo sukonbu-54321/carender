@@ -1,0 +1,54 @@
+# ==========================================
+# GitHub 公開用の .gitignore 設定
+# ==========================================
+
+# Firebase 接続設定 (API キーなど機密情報を含むため、絶対に公開しない)
+**/firebase-config.json
+**/.env
+**/.env.local
+**/.env.*
+
+# Firebase 関連のキャッシュとプロジェクト情報
+.firebase/
+.firebaserc
+firestore.indexes.json
+firestore.rules
+firebase.json
+
+# ログファイル
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.*.log*
+
+# 依存パッケージ
+node_modules/
+.npm/
+.yarn/
+.pnp*
+.yarn-integrity
+
+# エディタ・IDE 設定ファイル (個人設定を含むため除外)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ビルド成果物・テスト結果キャッシュ
+dist/
+build/
+out/
+coverage/
+.nyc_output
+.eslintcache
+
+**/404.html

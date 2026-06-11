@@ -1,0 +1,1001 @@
+body {
+  font-family: "Segoe UI", sans-serif;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+/* HEADER */
+header {
+  background: #252525;
+  padding: 10px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+header input {
+  background: #2d2d2d;
+  border: 1px solid #555;
+  color: #e0e0e0;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+/* CONTAINER */
+.container {
+  display: flex;
+  flex-direction: column; /* 基本は縦並び（スマホ用） */
+  padding: 10px;
+  gap: 20px;
+}
+
+/* 2. PCサイズ（768px以上）の時だけ、元のデザインを適用 */
+@media (min-width: 768px) {
+  .container {
+    flex-direction: row; /* 横並びに戻す */
+    padding: 20px;
+  }
+  .day {
+    font-size: 47px;
+    padding: 9px;
+  }
+  .day-mark {
+    transform: translate(200%, -50%);
+  }
+
+  aside {
+    width: 250px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-left: 20px;
+  }
+}
+
+/* 3. スマホでのカレンダー調整 */
+@media (max-width: 767px) {
+  #calendar {
+    gap: 2px; /* 隙間を詰める */
+  }
+  .day {
+    min-height: 70px; /* スマホでは高さを抑える */
+    padding: 6px;
+    font-size: 20px;
+  }
+  .day-mark {
+    transform: translate(15%, -60%);
+  }
+  
+  /* ヘッダーの要素を縦に並べる（はみ出し防止） */
+  header {
+    flex-direction: column;
+    gap: 10px;
+    padding: 15px;
+  }
+  
+  /* 目標ボードのテキストエリアを横幅いっぱいにする */
+  textarea {
+    width: 100% !important;
+  }
+  h1 {
+    font-size: 1.8rem;
+    text-align: center;
+  }
+  .routine-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+#calender {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  min-width: 700px;
+}
+
+aside h2 {
+  color: #ffffff;
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+}
+
+aside ul li {
+  list-style: none;
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #3a3a3a;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+aside ul li:hover,
+aside ul li.active {
+  background: #4a90e2;
+}
+
+.progress-bar {
+  background: #444;
+  height: 10px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.progress-bar .progress {
+  height: 100%;
+  background: linear-gradient(90deg, #4a90e2, #00c3ff);
+  transition: width 0.4s ease;
+}
+
+/* MAIN */
+#calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  width: 100%;
+  max-width: 900px; /* PCでの最大幅 */
+  margin: 0 auto;
+}
+
+.day {
+  background: #3a86ff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(255, 255, 255, 0.1);
+  text-align: center;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.day:hover {
+  background: #265abf;
+}
+
+.empty {
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+}
+
+/* TASK */
+.task {
+  font-size: 12px;
+  margin-top: 4px;
+  border-radius: 6px;
+  padding: 2px 4px;
+  color: white;
+}
+
+.cat-資格 {background: #3498db;}
+.cat-スキル {background: #2ecc71;}
+.cat-副業 {background: #e67e22;}
+.cat-投資 {background: #9b59b6;}
+
+/* MODAL */
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #2b2b2b;
+  color: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 10;
+}
+
+.hidden {display: none;}
+
+.modal input, .modal select, .modal textarea {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 6px;
+  background: #3a3a3a;
+  color: #e0e0e0;
+  border-radius: 6px;
+  border: 1px solid #555;
+}
+
+.modal button {
+  background: #4a90e2;
+  border: none;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.modal button:hover {
+  background: #357ae8;
+}
+
+/* TASK LIST */
+#taskListSection {
+  background: #fff;
+  margin: 10px 20px;
+  padding: 10px;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  color: #000;
+}
+
+#taskList li {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 4px solid #4a90e2;
+  background: #f9fafb;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.task-btns button {
+  margin-left: 5px;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.task-btns .edit {background-color: #f39c12; color: white;}
+.task-btns .delete {background-color: #e74c3c; color: white;}
+
+.task-check {
+  margin-right: 6px;
+  transform: scale(1.2);
+  accent-color: #4a90e2;
+}
+
+#remainingDays {
+  font-weight: normal;
+  color: #aaa;
+  letter-spacing: 0.5px;
+}
+
+#weeklySection {
+  background: #2c2c2c;
+  margin: 10px 20px;
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+#weeklySection h2 {
+  font-size: 1.1rem;
+  color: #f0f0f0;
+  margin-bottom: 10px;
+}
+
+#weeklyTaskList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#weeklyTaskList li {
+  padding: 6px 10px;
+  background: #3b3b3b;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.weekly-priority {
+  font-size: 0.8rem;
+  color: #ffb347;
+}
+
+#goalDispaly input[type="chckbox"] {
+  transform: scale(1.3);
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+#goalDisplay span {
+  transition: 0.3s ease;
+}
+#goalBoard {
+  background: #252525;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 10px;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+#goalBoard h2 {
+  text-align: center;
+  margin-bottom: 15px;
+  color: #ffb700;
+  font-size: 1.3rem;
+}
+
+.goal-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.goal-card {
+  background: #333;
+  border-radius: 10px;
+  padding: 12px 15px;
+  flex: 1 1 250px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+}
+
+.goal-card:hover {
+  transform: translateY(-3px);
+}
+
+.goal-card.highlight {
+  border: 2px solid #ffd700;
+  background: #444;
+}
+
+.goal-card h3 {
+  margin-top: 0;
+  color: #f1c40f;
+}
+
+.goal-card ul {
+  padding-left: 20px;
+}
+
+.sub-goals {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 20px;
+}
+
+.sub-goals div {
+  background: #333;
+  padding: 12px;
+  border-radius: 10px;
+  width: 45%;
+}
+
+.sub-goals h3 {
+  margin-top: 0;
+  color: #00bcd4;
+}
+
+.sub-goals p {
+  margin: 5px 0 0;
+}
+
+#goalsSection {
+  background: #2b2b2b;
+  color: #fff;
+  padding: 15px;
+  margin: 10px;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(255, 255, 255, 0.1);
+}
+
+#fixedGoals ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+}
+
+#fixedGoals li {
+  margin-bottom: 5px;
+  font-size: 0.95rem;
+}
+
+#editableGoals {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #444;
+}
+
+#editableGoals textarea {
+  width: 100%;
+  height: 60px;
+  background: #1e1e1e;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 10px;
+  resize: none;
+}
+
+#editableGoals button {
+  background: #3a86ff;
+  border: none;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#editableGoals button:hover {
+  background: #265abf;
+}
+
+.task input[type="checkbox"] {
+  margin-right: 6px;
+  transform: scale(1.1);
+  cursor: pointer;
+}
+
+.task span {
+  vertical-align: middle;
+}
+
+.task span.done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.progress-bar {
+  width: 90%;
+  height: 20px;
+  background: #444;
+  border-radius: 10px;
+  margin: 10px auto;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress {
+  height: 100%;
+  background: linear-gradient(90deg, #3a86ff, #00c4ff);
+  width: 0%;
+  border-radius: 10px;
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+  transition: width 0.4s ease;
+}
+
+.streak-box {
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  color: #fff;
+  text-align: center;
+  font-weight: bold;
+  padding: 10px 20px;
+  border-radius: 12px;
+  margin: 15px auto;
+  width: fit-content;
+  font-size: 1.1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.today-box {
+  background: #f9fafb;
+  color: #333;
+  padding: 15px 20px;
+  border-radius: 12px;
+  max-width: 500px;
+  margin: 10px auto 25px auto;
+  box-shadow: 0 2px 6px 4gba(0,0,0,0.1);
+}
+
+.today-box h3 {
+  margin-top: 0;
+}
+
+.today-box ul {
+  list-style: none;
+  padding: 0;
+}
+
+.today-box li {
+  margin: 6px 0;
+  font-size: 0.95rem;
+}
+
+#routineSection {
+  background: #2b2b2b;
+  border-radius: 12px;
+  margin: 20px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+#routineSection h2 {
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.routine-buttons button {
+  background: #3a86ff;
+  border: none;
+  padding: 6px 12px;
+  margin: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #fff;
+}
+
+.routine-buttons button:hover {
+  background: #265abf;
+}
+
+#routineList {
+  list-style: none;
+  margin: 20px 0;
+  padding: 0;
+  color: #e0e0e0;
+  position: relative;
+  padding-left: 20px;
+  margin-top: 10px;
+}
+
+#routineList li {
+  background: #3a3a3a;
+  color: #e0e0e0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  position: relative;
+  padding-left: 20px;
+}
+
+#routineList input {
+  
+  background: #444;
+  border: none;
+  color: #fff;
+  padding: 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+#routineList input:focus {
+  outline: 1px solid #3a86ff;
+}
+
+.routine-actions button {
+  background: #555;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  margin-right: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.routine-actions button:hover {
+  background: #777;
+}
+
+#routineList::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #3a86ff, #00c9a7);
+  border-radius: 3px;
+}
+
+#routineList li::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  background: #3a86ff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(58,134,255,0.7);
+}
+
+.morning { background-color: rgba(255, 223, 127, 0.1); }
+.daytime { background-color: rgba(120, 200, 255, 0.1); }
+.evening { background-color: rgba(255, 170, 150, 0.1); }
+.night { background-color: rgba(180, 150, 255, 0.1); }
+
+#currentTimeLabel {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  background: #ff4d4d;
+  color: white;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  box-shadow: 0 0 6px rgba(255, 77, 77, 0.8);
+  z-index: 0;
+}
+
+.routine-clock {
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(0,0,0,0.4);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 10px auto 15px;
+  box-shadow: 0 0 10px rgba(255,255,255,0.15);
+  letter-spacing: 1px;
+  width: 90%;
+}
+
+.current-time {
+  background: linear-gradient(90deg, rgba(58,134,255,0.3), rgba(58,134,255,0.1));
+  border-left: 5px solid #3a86ff;
+  box-shadow: 0 0 15px rgba(58,134,255,0.7);
+  padding: 12px 10px;
+  margin: 4px 0;
+  border-radius: 8px;
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+  position: relative;
+  z-index: 1;
+}
+
+#routineLIst li {
+  padding: 12px;
+  line-height: 1.5em;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+#goalDisplay p {
+  background: #2c2c2c;
+  padding: 10px 14px;
+  border-radius: 10px;
+  transition: background 0.4s ease, transform 0.3s ease;
+  margin-bottom: 10px;
+}
+
+#goalDisplay input[type="checkbox"] {
+  transform: scale(1.4);
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+#goalDisplay span {
+  transition: all 0.4s ease; 
+}
+
+.goal-done {
+  background: #204a2f !important;
+  box-shadow: 0 0 10px rgba(46, 204,113,0.5);
+}
+
+.goal-done span {
+  color: #aaffaa;
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 0px rgba(46, 204,113,0);}
+  50% { box-shadow: 0 0 15px rgba(46, 204,113,0.8);}
+  100% { box-shadow: 0 0 0px rgba(46,204,113,0);}
+}
+
+
+.goal-done {
+  animation: glow 0.8s ease-out;
+}
+
+.routine-item {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center ;
+  justify-content: space-between;
+  background: #2b2b2b;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  color: #e0e0e0;
+  width: 100%;
+  box-sizing: border-box;
+  writing-mode: horizontal-tb;
+}
+
+.routine-item input[type="checkbox"] {
+  margin-right: 10px;
+  transform: scale(1.2);
+  accent-color: #4ade80;
+}
+
+.routine-item input[type="checkbox"]:checked + label {
+  text-decoration: line-through;
+  color: #4ade80;
+  opacity: 0.8;
+}
+
+.current-time {
+  border: 2px solid #3b82f6;
+  box-shadow: 0 0 10px #3b82f6;
+  transform: scale(1.03);
+}
+
+.routine-text {
+  flex-grow: 1;
+  text-align: left;
+  
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+
+.routine-check {
+  width: 20px;
+  height: 20px;
+  margin-left: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: #4ade80;
+}
+.day-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  
+  font-size: 3rem;
+  color: rgba(74, 222, 128, 0.3);
+  line-height: 1;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.calender-day {
+  position: relative;
+  min-height: 80px;
+}
+
+.date-number {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+}
+
+.routine-item.done .routine-text {
+  text-decoration: line-through;
+  color: #4ade80;
+  opacity: 0.7;
+}
+
+.task.cat-ルーチン {
+  color: #4ade80;
+  font-weight: bold;
+  font-size: 16px;
+  text-align: center;
+  background: none;
+  box-shadow: none;
+}
+
+.routine-item.done {
+  background: #223322;
+}
+.task-container.hidden {
+  display: none;
+}
+.task-toggle-editBtn {
+  background: #444;
+  color: #fff;
+  border: none;
+  font-size: 0.65rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.edit-routine-input {
+  background: #444;
+  color: #fff;
+  border: 1px solid #666;
+  width: 90%;
+  font-size: 0.9rem;
+}
+.task-list-close-btn {
+  width: 100%;
+  padding: 15px;
+  background: #444;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+.task-list-close-btn:hover {
+  background: #555;
+}
+#filters li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px;
+  border-bottom: 1px solid #444;
+}
+#filters li:hover {
+  background: #3d3d3d;
+}
+.delete-cat-btn {
+  background: transparent;
+  color: #ff5f56;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+}
+.delete-cat-btn:hover {
+  color: #ff3d30;
+}
+.url {
+  color: #fff;
+  background: #444;
+  font-size: 20px;
+  text-align: center;
+  gap: 100px;
+  cursor: pointer;
+}
+.nav {
+  font-size: 30px;
+  align-items: center;
+}
+.nav-btn {
+  font-size: 20px;
+}
+.hidden-area {
+  display: none;
+  background-color: #333;
+  padding: 15px;
+  margin-top: 15px;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+.hidden-area label {
+  display: block;
+  margin: 10px 0 5px;
+  color: #4ade80;
+  font-weight: bold;
+}
+.hidden-area textarea{
+  width: 100%;
+  background: #1e1e1e;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.action-btn {
+  background: #444;
+  color: #fff;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+.save-btn {
+  background: #4ade80;
+  color: #000;
+  font-weight: bold;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  margin-top: 15px;
+  cursor: pointer;
+}
+#logout-section {
+  text-align: center;
+  margin-top: 30px;
+  margin-bottom: 20px;
+}
+
+#logoutBtn {
+  background: #ff4b5c;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#logoutBtn:hover {
+  background: #c0323f;
+}
+
+#login-section {
+  max-width: 400px;   /* セクション全体の幅 */
+  margin: 20px auto;  /* 中央寄せ */
+  text-align: center;
+}
+
+#login-section input {
+  width: 100%;        /* 横いっぱいに広げる */
+  max-width: 500px;   /* 最大幅を制御 */
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 6px;
+  border: none;
+  background: #2a2a2a;
+  color: #e0e0e0;
+  font-size: 14px;
+  display: block;     /* 1行ずつ縦並びに */
+}
+
+#login-section button {
+  width: 100%;
+  max-width: 100px;
+  padding: 12px;
+  margin-top: 12px;
+  border-radius: 6px;
+  background: #3a86ff;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  border: none;
+}
+
+#login-section button:hover {
+  background: #265abf;
+}
+.day.has-task-day {
+  background-color: rgba(255, 193, 7, 0.1) !important;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  transition: background-color 0.3s ease;
+}
+.day.has-task-day:hover {
+  background-color: rgba(74,222,128,0.25);
+}
+.day.has-task-day .date-number {
+  color: #4ade80;
+  font-weight: bold;
+}
+.day.today {
+  outline: 2px solid #4ade80;
+  outline-offset: -2px;
+  background: rgba(74, 222,128,0.05);
+}
+.day.today .date-number {
+  color: #4ade80;
+  font-weight: bold;
+}
+.day.all-done-day {
+  background-color: rgba(74,222,128,0.2) !important;
+}
+.day.all-done-day .date-number {
+  opacity: 0.6;
+}
+.day-header {
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.5rem;
+  padding-bottom: 5px;
+  color: #bbb;
+}
