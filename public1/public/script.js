@@ -7,21 +7,41 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 
 // 環境変数/Firebase Hosting自動初期化の読み込み
 async function loadFirebaseConfig() {
-  // 1. Firebase Hosting予約済みURLから取得（本番環境・エミュレータ）
-  try {
-    const response = await fetch('/__/firebase/init.json');
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (e) {}
+  const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "file:";
 
-  // 2. ローカルのfirebase-config.jsonファイルから取得（ローカル単体起動時）
-  try {
-    const response = await fetch('./firebase-config.json');
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (e) {}
+  if (isLocal) {
+    // 1. ローカル実行時は、まずローカルの firebase-config.json から取得して /__/firebase/init.json の 404 エラーを防止する
+    try {
+      const response = await fetch('./firebase-config.json');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {}
+
+    // 2. 失敗した場合のみ、Hosting エミュレータを考慮して /__/firebase/init.json を試す
+    try {
+      const response = await fetch('/__/firebase/init.json');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {}
+  } else {
+    // 本番環境（Firebase Hosting）では予約済みURLから取得
+    try {
+      const response = await fetch('/__/firebase/init.json');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {}
+
+    // フォールバック
+    try {
+      const response = await fetch('./firebase-config.json');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {}
+  }
 
   console.error("Firebaseの設定を読み込めませんでした。ローカルのfirebase-config.jsonファイルまたはFirebase Hostingエミュレータを確認してください。");
   return null;
@@ -32,23 +52,56 @@ let app, auth, db;
 // Firebaseが正常に初期化されているか確認するガード関数
 const checkFirebaseInit = () => {
   if (!auth || !db) {
-    showToast("⚠️ Firebaseの初期化に失敗しています。");
-    alert("Firebaseの設定（firebase-config.json）が正しく読み込めなかったため、この機能は利用できません。");
+    console.log("Firebase is not initialized (running in offline mode).");
     return false;
   }
   return true;
 };
 
 // ==========================================
-// 2. アプリ共通変数
+// 2. 安全なローカルストレージヘルパー & アプリ共通変数
 // ==========================================
-let tasks = {};
-let streak = { current: 0, best: 0, lastDate: null };
+function safeGetLocalStorage(key, defaultValue) {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch (e) {
+    console.error(`localStorage key "${key}" の解析に失敗しました:`, e);
+    return defaultValue;
+  }
+}
+
+function updateLocalLastUpdated() {
+  const now = Date.now();
+  localStorage.setItem("lastUpdated", now.toString());
+}
+
+let tasks = safeGetLocalStorage("tasks", {});
+let streak = safeGetLocalStorage("streak", { current: 0, best: 0, lastDate: null });
 let currentUser = null;
-let categories = ["資格", "スキル", "副業", "投資"];
+let categories = safeGetLocalStorage("categories", ["資格", "スキル", "副業", "投資"]);
 let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
 let selectedDate = null;
+
+let weekdayRoutine = safeGetLocalStorage("weekdayRoutine", [
+  "6:00 起床・準備",
+  "7:00 通学・インプット(両学長ライブ)",
+  "9:30~15:30 学校・資格勉強",
+  "18:00~23:30 プログラミング学習",
+  "24:00 就寝"
+]);
+
+let weekendRoutine = safeGetLocalStorage("weekendRoutine", [
+  "9:00 起床",
+  "10:00~12:00 復習・資格勉強",
+  "13:00~17:00 プログラミング・思考整理",
+  "18:00~22:00 自由時間・読書",
+  "24:00 就寝"
+]);
+
+let currentRoutine = "weekday";
+let isEditing = false;
 
 // ==========================================
 // トーストメッセージ表示 (Could-priority)
@@ -94,9 +147,39 @@ function showToast(message) {
 // 3. 認証ロジック (window登録でHTMLから呼べるようにする)
 // ==========================================
 
+// ユーザーのローカルデータをすべて消去する
+function clearUserLocalStorage() {
+  const keys = [
+    "tasks",
+    "streak",
+    "categories",
+    "userGoals",
+    "roadmapGoals",
+    "dailyRoutineStatus",
+    "weekdayRoutine",
+    "weekendRoutine",
+    "monthlyGoal",
+    "weeklyGoal",
+    "lastUpdated",
+    "lastRoutineResetDate",
+    "routineType",
+    "weekdayProgress",
+    "weekendProgress"
+  ];
+  keys.forEach(key => localStorage.removeItem(key));
+  console.log("ユーザーのローカルデータを消去しました。");
+}
+
 // ログイン
 const login = async () => {
-  if (!checkFirebaseInit()) return;
+  const statusEl = document.getElementById("loginStatus");
+  if (statusEl) statusEl.textContent = "";
+
+  if (!checkFirebaseInit()) {
+    if (statusEl) statusEl.textContent = "Firebaseの設定が見つかりません。オフラインモードでご利用ください。";
+    return;
+  }
+  
   const emailInput = document.getElementById("loginEmail");
   const passInput = document.getElementById("loginPassword");
 
@@ -109,7 +192,7 @@ const login = async () => {
   const pass = passInput.value;
 
   if (!email || !pass) {
-    alert("メールアドレスとパスワードを入力してください");
+    if (statusEl) statusEl.textContent = "メールアドレスとパスワードを入力してください";
     return;
   }
 
@@ -117,33 +200,62 @@ const login = async () => {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch (e) {
     console.error("Firebaseエラー詳細:", e.code, e.message);
-    alert("ログインに失敗しました: " + e.message);
+    if (statusEl) {
+      statusEl.textContent = "ログインに失敗しました: " + e.message;
+    }
   }
 };
 
 // 新規登録
 const signup = async () => {
-  if (!checkFirebaseInit()) return;
-  const email = document.getElementById("loginEmail").value;
-  const pass = document.getElementById("loginPassword").value;
-  if (!email || !pass) return alert("メールとパスワードを入力してください");
+  const statusEl = document.getElementById("loginStatus");
+  if (statusEl) {
+    statusEl.textContent = "";
+    statusEl.style.color = "";
+  }
+
+  if (!checkFirebaseInit()) {
+    if (statusEl) statusEl.textContent = "Firebaseの設定が見つかりません。オフラインモードでご利用ください。";
+    return;
+  }
+
+  const emailInput = document.getElementById("loginEmail");
+  const passInput = document.getElementById("loginPassword");
+  if (!emailInput || !passInput) return;
+
+  const email = emailInput.value.trim();
+  const pass = passInput.value;
+
+  if (!email || !pass) {
+    if (statusEl) statusEl.textContent = "メールとパスワードを入力してください";
+    return;
+  }
+
   try {
     await createUserWithEmailAndPassword(auth, email, pass);
-    alert("登録が完了しました！そのままログインしてください。");
+    if (statusEl) {
+      statusEl.style.color = "#4ade80"; // 成功時は緑色
+      statusEl.textContent = "登録が完了しました！そのままログインしてください。";
+    }
   } catch (e) {
-    alert("登録失敗: " + e.message);
+    if (statusEl) {
+      statusEl.style.color = "";
+      statusEl.textContent = "登録失敗: " + e.message;
+    }
   }
 };
 
 // ログアウト
 const logout = async () => {
-  if (!checkFirebaseInit()) return;
-  try {
-    await signOut(auth);
-    location.reload();
-  } catch (e) {
-    console.error("ログアウト失敗", e);
+  if (auth) {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error("ログアウト失敗", e);
+    }
   }
+  clearUserLocalStorage();
+  location.reload();
 };
 
 // ⭐最重要：HTMLの onclick から呼べるように窓口を開く
@@ -159,10 +271,25 @@ window.initCalendar = initCalendar;
 async function syncData() {
   if (!checkFirebaseInit()) return;
   if (!currentUser) return;
+  
+  const localLastUpdated = Number(localStorage.getItem("lastUpdated") || Date.now());
+  const userGoals = safeGetLocalStorage("userGoals", {});
+  const roadmapGoals = safeGetLocalStorage("roadmapGoals", {});
+  const dailyRoutineStatus = safeGetLocalStorage("dailyRoutineStatus", {});
+  const weekdayRoutineData = safeGetLocalStorage("weekdayRoutine", weekdayRoutine);
+  const weekendRoutineData = safeGetLocalStorage("weekendRoutine", weekendRoutine);
+
   try {
     await setDoc(doc(db, "users", currentUser.uid), {
-      tasks, streak, categories,
-      lastUpdated: new Date()
+      tasks,
+      streak,
+      categories,
+      userGoals,
+      roadmapGoals,
+      dailyRoutineStatus,
+      weekdayRoutine: weekdayRoutineData,
+      weekendRoutine: weekendRoutineData,
+      lastUpdated: localLastUpdated
     }, { merge: true });
     console.log("Firestore保存成功");
   } catch (e) { 
@@ -173,9 +300,23 @@ async function syncData() {
 
 function loadFromLocalStorage() {
   try {
-    tasks = JSON.parse(localStorage.getItem("tasks")) || {};
-    streak = JSON.parse(localStorage.getItem("streak")) || { current: 0, best: 0, lastDate: null };
-    categories = JSON.parse(localStorage.getItem("categories")) || ["資格", "スキル", "副業", "投資"];
+    tasks = safeGetLocalStorage("tasks", {});
+    streak = safeGetLocalStorage("streak", { current: 0, best: 0, lastDate: null });
+    categories = safeGetLocalStorage("categories", ["資格", "スキル", "副業", "投資"]);
+    weekdayRoutine = safeGetLocalStorage("weekdayRoutine", [
+      "6:00 起床・準備",
+      "7:00 通学・インプット(両学長ライブ)",
+      "9:30~15:30 学校・資格勉強",
+      "18:00~23:30 プログラミング学習",
+      "24:00 就寝"
+    ]);
+    weekendRoutine = safeGetLocalStorage("weekendRoutine", [
+      "9:00 起床",
+      "10:00~12:00 復習・資格勉強",
+      "13:00~17:00 プログラミング・思考整理",
+      "18:00~22:00 自由時間・読書",
+      "24:00 就寝"
+    ]);
     console.log("ローカルストレージからデータを復元しました");
   } catch (err) {
     console.error("ローカルストレージの復元に失敗しました:", err);
@@ -194,18 +335,47 @@ async function loadUserData() {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
-      // 取得したデータを変数に代入
-      tasks = data.tasks || {};
-      streak = data.streak || { current: 0, best: 0, lastDate: null };
-      categories = data.categories || ["資格", "スキル", "副業", "投資"];
-      console.log("Firestoreからデータを復元しました");
-      
-      // ローカルストレージ側も同期
-      localStorage.setItem("tasks", JSON.stringify(tasks));
-      localStorage.setItem("streak", JSON.stringify(streak));
-      localStorage.setItem("categories", JSON.stringify(categories));
+      const serverLastUpdated = Number(data.lastUpdated || 0);
+      const localLastUpdated = Number(localStorage.getItem("lastUpdated") || 0);
+
+      // ロールフォワード: ローカルの更新がサーバーより新しい場合はサーバーに同期
+      if (localLastUpdated > serverLastUpdated) {
+        console.log("ローカルデータの方が新しいため、サーバーに同期（ロールフォワード）します。");
+        await syncData();
+      } else {
+        // サーバーデータの方が新しい、または同等な場合は適用
+        tasks = data.tasks || {};
+        streak = data.streak || { current: 0, best: 0, lastDate: null };
+        categories = data.categories || ["資格", "スキル", "副業", "投資"];
+        
+        const userGoals = data.userGoals || {};
+        const roadmapGoals = data.roadmapGoals || {};
+        const dailyRoutineStatus = data.dailyRoutineStatus || {};
+        
+        weekdayRoutine = data.weekdayRoutine || weekdayRoutine;
+        weekendRoutine = data.weekendRoutine || weekendRoutine;
+
+        console.log("Firestoreからデータを復元しました");
+        
+        localStorage.setItem("tasks", JSON.stringify(tasks));
+        localStorage.setItem("streak", JSON.stringify(streak));
+        localStorage.setItem("categories", JSON.stringify(categories));
+        localStorage.setItem("userGoals", JSON.stringify(userGoals));
+        localStorage.setItem("roadmapGoals", JSON.stringify(roadmapGoals));
+        localStorage.setItem("dailyRoutineStatus", JSON.stringify(dailyRoutineStatus));
+        localStorage.setItem("weekdayRoutine", JSON.stringify(weekdayRoutine));
+        localStorage.setItem("weekendRoutine", JSON.stringify(weekendRoutine));
+        
+        if (userGoals.monthly !== undefined) localStorage.setItem("monthlyGoal", userGoals.monthly);
+        if (userGoals.weekly !== undefined) localStorage.setItem("weeklyGoal", userGoals.weekly);
+        
+        localStorage.setItem("lastUpdated", serverLastUpdated.toString());
+      }
     } else {
+      // サーバーにデータがない場合は初期アップロード
+      console.log("サーバーにデータがないため、初期アップロードを行います。");
       loadFromLocalStorage();
+      await syncData();
     }
   } catch (e) {
     console.error("読み込みエラー:", e);
@@ -214,6 +384,8 @@ async function loadUserData() {
   }
   initCalendar();
   renderCategories();
+  loadGoals();
+  renderRoutine();
 }
 
 // 初期化非同期処理
@@ -232,7 +404,9 @@ async function loadUserData() {
     onAuthStateChanged(auth, async (user) => {
       if (user) {
         currentUser = user;
-        await loadUserData(); 
+        
+        // 可用性向上のため、まずはローカルストレージからデータを即座にロードしてUI表示
+        loadFromLocalStorage();
         
         const loginSect = document.getElementById("login-section");
         if (loginSect) loginSect.style.display = "none";
@@ -241,10 +415,14 @@ async function loadUserData() {
         
         initCalendar(); 
         renderCategories();
+        loadGoals();
+        renderRoutine();
         updateProgressBar();
-        updateRemainingDays();
         renderTodaySummary(); 
         renderWeeklyTasks();  
+
+        // バックグラウンドで同期を実行
+        await loadUserData();
       } else {
         currentUser = null;
         const loginSect = document.getElementById("login-section");
@@ -253,8 +431,28 @@ async function loadUserData() {
         if (mainApp) mainApp.style.display = "none";
       }
     });
+  } else {
+    // Firebaseの設定が読み込めない場合のオフラインフォールバック
+    console.log("Firebase 設定の読み込みに失敗したか、オフラインです。オフライン（ローカル）モードで起動します。");
+    currentUser = null;
+    
+    loadFromLocalStorage();
+    
+    const loginSect = document.getElementById("login-section");
+    if (loginSect) loginSect.style.display = "none";
+    const mainApp = document.getElementById("mainApp");
+    if (mainApp) mainApp.style.display = "block";
+    
+    initCalendar(); 
+    renderCategories();
+    loadGoals();
+    renderRoutine();
+    updateProgressBar();
+    renderTodaySummary(); 
+    renderWeeklyTasks();  
   }
 })();
+
 
 // 例：タスクを保存するボタンの処理
 window.saveTaskData = async () => {
@@ -280,37 +478,30 @@ function initCalendar() {
   renderWeeklyTasks();
   updateProgressBar();
 }
-setInterval(updateRemainingDays, 1000 * 60 * 60);
 
-function updateRemainingDays() {
-  const targetDate = new Date(2028, 2, 31);
-  const today = new Date();
-  const diffTime = targetDate - today;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  const remainingText = diffDays > 0
-  ? `📅 2028年3月31日まで 残り ${diffDays}日`
-  : "🎉 目標達成期日を迎えました！";
+let selectedGoalYear = new Date().getFullYear();
 
-  const remainingEl = document.getElementById("remainingDays");
-  if (remainingEl) remainingEl.textContent = remainingText;
+function scheduleYearAutoUpdate() {
+  const now = new Date();
+  const nextJan1 = new Date(now.getFullYear() + 1, 0, 1, 0, 0, 0, 0);
+  const msUntilNewYear = nextJan1 - now;
+
+  setTimeout(() => {
+    selectedGoalYear = new Date().getFullYear(); 
+    updateGoalTexts();
+    scheduleYearAutoUpdate(); 
+  }, msUntilNewYear);
 }
+scheduleYearAutoUpdate(); 
 
 function updateGoalTexts() {
-  const savedGoals = JSON.parse(localStorage.getItem("userGoals")) || {};
-  const roadmap = JSON.parse(localStorage.getItem("roadmapGoals")) || {};
+  const savedGoals = safeGetLocalStorage("userGoals", {});
+  const roadmap = safeGetLocalStorage("roadmapGoals", {});
 
-  // --- デフォルト目標の設定 ---
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const weekNum = Math.ceil(now.getDate() / 7);
-  
-  const defaultMonthly = `${month}月：ITパスポート・プログラミング基礎を固める`;
-  const defaultWeekly = `第${weekNum}週：学習時間の確保と習慣化`;
 
-  // --- 表示の更新（入力があればそれを、なければデフォルトを） ---
-  const monthlyText = savedGoals.monthly || defaultMonthly;
-  const weeklyText = savedGoals.weekly || defaultWeekly;
+
+  const monthlyText = savedGoals.monthly || "未設定";
+  const weeklyText = savedGoals.weekly || "未設定";
 
   const monthlyTextEl = document.getElementById("monthlyGoalText");
   if (monthlyTextEl) monthlyTextEl.textContent = monthlyText;
@@ -318,32 +509,29 @@ function updateGoalTexts() {
   const weeklyTextEl = document.getElementById("weeklyGoalText");
   if (weeklyTextEl) weeklyTextEl.textContent = weeklyText;
 
-  // --- 入力欄の同期（現在の値を保持） ---
   const monthlyInput = document.getElementById("monthlyGoalInput");
   if (monthlyInput) monthlyInput.value = savedGoals.monthly || "";
 
   const weeklyInput = document.getElementById("weeklyGoalInput");
   if (weeklyInput) weeklyInput.value = savedGoals.weekly || "";
 
-  // 年度目標の表示更新
-  const goal2025Text = document.getElementById("goal2025Text");
-  if (goal2025Text) goal2025Text.innerHTML = `<strong>2025年度：</strong> ${roadmap.g2025 || "ITパスポート合格・習得"}`;
 
-  const goal2026Text = document.getElementById("goal2026Text");
-  if (goal2026Text) goal2026Text.innerHTML = `<strong>2026年度：</strong> ${roadmap.g2026 || "簿記3級・アプリ制作"}`;
+  // --- 選択中の年度目標を表示 ---
+  const yearKey = `y${selectedGoalYear}`;
+  const yearGoalText = roadmap[yearKey] || "（目標未設定）";
 
-  const goal2027Text = document.getElementById("goal2027Text");
-  if (goal2027Text) goal2027Text.innerHTML = `<strong>2027年度：</strong> ${roadmap.g2027 || "基本情報・副業収益化"}`;
+  const contentEl = document.getElementById("currentYearGoalContent");
+  if (contentEl) contentEl.textContent = yearGoalText;
 
-  // 年度目標入力欄の同期
-  const goal2025Input = document.getElementById("goal2025Input");
-  if (goal2025Input) goal2025Input.value = roadmap.g2025 || "ITパスポート合格・習得";
+  // 編集エリアの入力欄も同期
+  const yearGoalInput = document.getElementById("yearGoalInput");
+  if (yearGoalInput) yearGoalInput.value = roadmap[yearKey] || "";
 
-  const goal2026Input = document.getElementById("goal2026Input");
-  if (goal2026Input) goal2026Input.value = roadmap.g2026 || "簿記3級・アプリ制作";
-
-  const goal2027Input = document.getElementById("goal2027Input");
-  if (goal2027Input) goal2027Input.value = roadmap.g2027 || "基本情報・副業収益化";
+  // 年度ラベルを更新
+  ["displayYear", "editYearLabel", "editYearLabel2"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = selectedGoalYear;
+  });
 
   // チェック状態の反映
   const monthlyCheck = document.getElementById("monthlyGoalCheck");
@@ -356,14 +544,16 @@ function updateGoalTexts() {
 }
 
 function toggleGoalDone(type) {
-  const goals = JSON.parse(localStorage.getItem("userGoals")) || {};
+  const goals = safeGetLocalStorage("userGoals", {});
   const checkEl = document.getElementById(`${type}GoalCheck`);
   if (!checkEl) return;
 
   goals[`${type}Done`] = checkEl.checked;
   localStorage.setItem("userGoals", JSON.stringify(goals));
+  updateLocalLastUpdated();
 
   applyGoalStyle(`${type}GoalCheck`, `${type}GoalText`);
+  syncData();
 }
 
 function applyGoalStyle(checkId, textId) {
@@ -391,6 +581,9 @@ function renderCalendar(year, month, filter = null) {
   const calendar = document.getElementById("calendar");
   if (!calendar) return;
   calendar.innerHTML = "";
+
+  const searchInput = document.getElementById("search");
+  const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
   const dayLabels = ["日", "月", "火", "水", "木", "金", "土"];
   dayLabels.forEach((label, week) => {
@@ -444,7 +637,7 @@ function renderCalendar(year, month, filter = null) {
     dayNum.classList.add("date-number");
     dayCell.appendChild(dayNum);
 
-    const dailyStatus = JSON.parse(localStorage.getItem("dailyRoutineStatus")) || {};
+    const dailyStatus = safeGetLocalStorage("dailyRoutineStatus", {});
     if (dailyStatus[dateKey] === true) {
       const mark = document.createElement("div");
       mark.className = "day-mark";
@@ -464,6 +657,9 @@ function renderCalendar(year, month, filter = null) {
 
         // カテゴリーフィルターを適用
         if (filter && t.category !== filter) return;
+
+        // 検索フィルターを適用
+        if (searchQuery && !t.title.toLowerCase().includes(searchQuery)) return;
 
         const taskDiv = document.createElement("div");
         taskDiv.classList.add("task", `cat-${t.category}`);
@@ -502,6 +698,7 @@ async function toggleTaskComplete(date, index) {
 
   tasks[date][index].done = !tasks[date][index].done;
   localStorage.setItem("tasks", JSON.stringify(tasks));
+  updateLocalLastUpdated();
 
   await syncData();
   initCalendar();        
@@ -576,7 +773,15 @@ function openModal(year, month, day) {
 
   document.getElementById("taskTitle").focus();
   
-    renderTaskList(selectedDate);
+  const progEl = document.getElementById("taskProgress");
+  if (progEl) {
+    progEl.value = "0";
+    if (progEl.nextElementSibling) {
+      progEl.nextElementSibling.textContent = "0%";
+    }
+  }
+
+  renderTaskList(selectedDate);
 }
 
 closeBtn.addEventListener("click", () => {
@@ -606,28 +811,42 @@ saveBtn.addEventListener("click", async () => {
     created: editingIndex !== null ? (tasks[selectedDate][editingIndex].created || new Date().toISOString()) : new Date().toISOString()
   };
 
-  if (editingIndex !== null) {
-    tasks[selectedDate][editingIndex] = newTask;
-    editingIndex = null;
-  } else {
-    tasks[selectedDate].push(newTask);
+  try {
+    if (editingIndex !== null) {
+      tasks[selectedDate][editingIndex] = newTask;
+      editingIndex = null;
+    } else {
+      tasks[selectedDate].push(newTask);
+    }
+
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+    updateLocalLastUpdated();
+
+    const taskModal = document.getElementById("taskModal");
+    if (taskModal) taskModal.classList.add("hidden");
+
+    renderCalendar(currentYear, currentMonth);
+    renderTaskList(selectedDate);
+    renderTodaySummary();
+    renderWeeklyTasks();
+    
+    ["taskTitle", "taskProgress", "taskMemo"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.value = (id === "taskProgress" ? "0" : "");
+        if (id === "taskProgress" && el.nextElementSibling) {
+          el.nextElementSibling.textContent = "0%";
+        }
+      }
+    });
+
+    // ローカル保存が正常終了した場合のみFirebase同期を実行
+    await syncData();
+
+  } catch (err) {
+    console.error("保存失敗:", err);
+    alert("ローカル保存に失敗したため、同期を中止しました。");
   }
-
-  localStorage.setItem("tasks", JSON.stringify(tasks));
-  const taskModal = document.getElementById("taskModal");
-  if (taskModal) taskModal.classList.add("hidden");
-  
-  await syncData();
-
-  renderCalendar(currentYear, currentMonth);
-  renderTaskList(selectedDate);
-  renderTodaySummary();
-  renderWeeklyTasks();
-  
-  ["taskTitle", "taskProgress", "taskMemo"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = (id === "taskProgress" ? "0" : "");
-  });
 });
 
 document.getElementById("prevMonth").addEventListener("click", () => {
@@ -723,7 +942,12 @@ async function editTask(date, index) {
   const prioEl = document.getElementById("taskPriority");
   if (prioEl) prioEl.value = t.priority;
   const progEl = document.getElementById("taskProgress");
-  if (progEl) progEl.value = t.progress;
+  if (progEl) {
+    progEl.value = t.progress;
+    if (progEl.nextElementSibling) {
+      progEl.nextElementSibling.textContent = `${t.progress}%`;
+    }
+  }
   const memoEl = document.getElementById("taskMemo");
   if (memoEl) memoEl.value = t.memo;
 
@@ -739,16 +963,21 @@ window.editTask = editTask;
 async function deleteTask(date, index) {
   if (!confirm("このタスクを削除しますか？")) return;
 
-  tasks[date].splice(index, 1);
-  if (tasks[date].length === 0) delete tasks[date];
+  try {
+    tasks[date].splice(index, 1);
+    if (tasks[date].length === 0) delete tasks[date];
 
-  localStorage.setItem("tasks", JSON.stringify(tasks));
-  renderCalendar(currentYear, currentMonth);
-  renderTaskList(date);
-  renderWeeklyTasks();
-  updateProgress();
-  await syncData();
-  if (typeof renderTodaySummary === "function") renderTodaySummary();
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+    updateLocalLastUpdated();
+    renderCalendar(currentYear, currentMonth);
+    renderTaskList(date);
+    renderWeeklyTasks();
+    updateProgress();
+    await syncData();
+    if (typeof renderTodaySummary === "function") renderTodaySummary();
+  } catch (err) {
+    console.error("削除失敗:", err);
+  }
 }
 
 const defaultSave = () => {
@@ -773,42 +1002,31 @@ const defaultSave = () => {
 // ② toggleTaskDone 修正（date → dateKeyに）
 async function toggleTaskDone(dateKey, index) {
   if (!tasks[dateKey]) return;
-  tasks[dateKey][index].done = !tasks[dateKey][index].done;
-  localStorage.setItem("tasks", JSON.stringify(tasks));
-  renderCalendar(currentYear, currentMonth);
-  renderTodaySummary();  
-  renderWeeklyTasks();   
-  renderTaskList(dateKey);
-  if (selectedDate === dateKey) renderTaskList(dateKey);
-  await syncData();
+  try {
+    tasks[dateKey][index].done = !tasks[dateKey][index].done;
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+    updateLocalLastUpdated();
+    renderCalendar(currentYear, currentMonth);
+    renderTodaySummary();  
+    renderWeeklyTasks();   
+    renderTaskList(dateKey);
+    if (selectedDate === dateKey) renderTaskList(dateKey);
+    await syncData();
+  } catch (err) {
+    console.error("切り替え失敗:", err);
+  }
 }
 
 
 // 目標データの初期化・読み込み
 function loadGoals() {
-  const roadmap = JSON.parse(localStorage.getItem("roadmapGoals")) || {
-    g2025: "ITパスポート合格・習得",
-    g2026: "簿記3級・アプリ制作",
-    g2027: "基本情報・副業収益化"
-  };
+  // 旧フォーマット（g2025/g2026/g2027）のデフォルト値が残っている場合はクリアする（1回のみ）
+  if (!localStorage.getItem("roadmapGoals_migrated_v2")) {
+    localStorage.removeItem("roadmapGoals");
+    localStorage.setItem("roadmapGoals_migrated_v2", "1");
+  }
 
-  // 表示に反映 (DOM Null Checks)
-  const goal2025Text = document.getElementById("goal2025Text");
-  if (goal2025Text) goal2025Text.innerHTML = `<strong>2025年度：</strong> ${roadmap.g2025}`;
-  const goal2026Text = document.getElementById("goal2026Text");
-  if (goal2026Text) goal2026Text.innerHTML = `<strong>2026年度：</strong> ${roadmap.g2026}`;
-  const goal2027Text = document.getElementById("goal2027Text");
-  if (goal2027Text) goal2027Text.innerHTML = `<strong>2027年度：</strong> ${roadmap.g2027}`;
-
-  // 入力欄に反映
-  const goal2025Input = document.getElementById("goal2025Input");
-  if (goal2025Input) goal2025Input.value = roadmap.g2025;
-  const goal2026Input = document.getElementById("goal2026Input");
-  if (goal2026Input) goal2026Input.value = roadmap.g2026;
-  const goal2027Input = document.getElementById("goal2027Input");
-  if (goal2027Input) goal2027Input.value = roadmap.g2027;
-
-  // 今月・今週の目標（既存の読み込み）
+  // 今月・今週の目標の読み込み
   const monthlyGoalText = document.getElementById("monthlyGoalText");
   if (monthlyGoalText) monthlyGoalText.textContent = localStorage.getItem("monthlyGoal") || "未設定";
   const weeklyGoalText = document.getElementById("weeklyGoalText");
@@ -817,6 +1035,28 @@ function loadGoals() {
   if (monthlyGoalInput) monthlyGoalInput.value = localStorage.getItem("monthlyGoal") || "";
   const weeklyGoalInput = document.getElementById("weeklyGoalInput");
   if (weeklyGoalInput) weeklyGoalInput.value = localStorage.getItem("weeklyGoal") || "";
+
+  // 年度表示を更新
+  updateGoalTexts();
+}
+
+// 年度ナビゲーション初期化（DOMContentLoaded 時に1回だけ実行する）
+function initYearNav() {
+  const prevBtn = document.getElementById("prevYear");
+  const nextBtn = document.getElementById("nextYear");
+
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      selectedGoalYear--;
+      updateGoalTexts();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      selectedGoalYear++;
+      updateGoalTexts();
+    });
+  }
 }
 
 // 開閉ロジック
@@ -835,75 +1075,162 @@ if (toggleEditBtn) {
   });
 }
 
-// 初期実行
-window.addEventListener("DOMContentLoaded", loadGoals);
+// 初期実行：loadGoals（目標読み込み）と initYearNav（ナビリスナー登遌）をそれぞれ1回だけ実行
+window.addEventListener("DOMContentLoaded", () => {
+  loadGoals();
+  initYearNav();
 
-// 保存ボタンの処理（これ1つに統合）
+  const saveBtn = document.getElementById("saveGoals");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", saveGoals);
+  }
+
+  const mCheck = document.getElementById("monthlyGoalCheck");
+  const wCheck = document.getElementById("weeklyGoalCheck");
+  if (mCheck) mCheck.addEventListener("change", () => toggleGoalDone("monthly"));
+  if (wCheck) wCheck.addEventListener("change", () => toggleGoalDone("weekly"));
+
+  const searchInput = document.getElementById("search");
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      const activeFilterEl = document.querySelector("#filters li.active");
+      const activeFilter = activeFilterEl ? activeFilterEl.getAttribute("data-category") : null;
+      renderCalendar(currentYear, currentMonth, activeFilter);
+    });
+  }
+});
+
+// 保存ボタンの処理（統合版・年度動的対応）
 async function saveGoals() {
   const monthlyEl = document.getElementById("monthlyGoalInput");
   const weeklyEl = document.getElementById("weeklyGoalInput");
   const monthly = monthlyEl ? monthlyEl.value.trim() : "";
   const weekly = weeklyEl ? weeklyEl.value.trim() : "";
 
-  const g2025I = document.getElementById("goal2025Input");
-  const g2026I = document.getElementById("goal2026Input");
-  const g2027I = document.getElementById("goal2027Input");
+  // 選択中の年度目標を保存
+  const yearGoalEl = document.getElementById("yearGoalInput");
+  const yearGoalValue = yearGoalEl ? yearGoalEl.value.trim() : "";
 
-  const roadmap = {
-    g2025: g2025I ? g2025I.value : "",
-    g2026: g2026I ? g2026I.value : "",
-    g2027: g2027I ? g2027I.value : ""
-  };
+  const roadmap = safeGetLocalStorage("roadmapGoals", {});
+  roadmap[`y${selectedGoalYear}`] = yearGoalValue;
 
-  const savedGoals = JSON.parse(localStorage.getItem("userGoals")) || {};
+  const savedGoals = safeGetLocalStorage("userGoals", {});
   savedGoals.monthly = monthly;
   savedGoals.weekly = weekly;
 
-  localStorage.setItem("userGoals", JSON.stringify(savedGoals));
-  localStorage.setItem("roadmapGoals", JSON.stringify(roadmap));
-  localStorage.setItem("monthlyGoal", monthly);
-  localStorage.setItem("weeklyGoal", weekly);
+  try {
+    localStorage.setItem("userGoals", JSON.stringify(savedGoals));
+    localStorage.setItem("roadmapGoals", JSON.stringify(roadmap));
+    localStorage.setItem("monthlyGoal", monthly);
+    localStorage.setItem("weeklyGoal", weekly);
+    updateLocalLastUpdated();
 
-  updateGoalTexts();
-  await syncData();
+    updateGoalTexts();
+    await syncData();
 
-  alert("🎯 目標を保存しました！");
+    alert("🎯 目標を保存しました！");
 
-  const editArea = document.getElementById("editableGoals");
-  if (editArea) editArea.style.display = "none";
-  const toggleBtn = document.getElementById("toggleEditBtn");
-  if (toggleBtn) toggleBtn.textContent = "⚙️ 目標を編集する";
+    const editArea = document.getElementById("editableGoals");
+    if (editArea) editArea.style.display = "none";
+    const toggleBtn = document.getElementById("toggleEditBtn");
+    if (toggleBtn) toggleBtn.textContent = "⚙️ 目標を編集する";
+  } catch (err) {
+    console.error("目標保存失敗:", err);
+    alert("ローカル保存に失敗したため、同期を中止しました。");
+  }
+}
+
+// ストリークの統計情報を動的に計算する
+function calculateStreakStats(dailyStatus) {
+  if (!dailyStatus) return { current: 0, best: 0 };
+  
+  const completedKeys = Object.keys(dailyStatus).filter(key => dailyStatus[key] === true);
+  if (completedKeys.length === 0) {
+    return { current: 0, best: 0 };
+  }
+
+  const today = new Date();
+  const todayKey = formatDateKey(today);
+  const yesterday = new Date(Date.now() - 86400000);
+  const yesterdayKey = formatDateKey(yesterday);
+
+  let current = 0;
+  let startCheckDate = null;
+
+  if (dailyStatus[todayKey] === true) {
+    startCheckDate = today;
+  } else if (dailyStatus[yesterdayKey] === true) {
+    startCheckDate = yesterday;
+  }
+
+  if (startCheckDate) {
+    let checkDate = new Date(startCheckDate);
+    while (true) {
+      const checkKey = formatDateKey(checkDate);
+      if (dailyStatus[checkKey] === true) {
+        current++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+  }
+
+  const dates = completedKeys.map(key => {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0, 0);
+  }).sort((a, b) => a - b);
+
+  let best = 0;
+  let tempStreak = 0;
+  let prevTime = null;
+
+  dates.forEach(date => {
+    const time = date.getTime();
+    if (prevTime === null) {
+      tempStreak = 1;
+    } else {
+      const diffDays = Math.round((time - prevTime) / 86400000);
+      if (diffDays === 1) {
+        tempStreak++;
+      } else if (diffDays > 1) {
+        if (tempStreak > best) best = tempStreak;
+        tempStreak = 1;
+      }
+    }
+    prevTime = time;
+  });
+  if (tempStreak > best) best = tempStreak;
+
+  const savedStreak = safeGetLocalStorage("streak", { current: 0, best: 0, lastDate: null });
+  if (savedStreak && savedStreak.best > best) {
+    best = savedStreak.best;
+  }
+
+  return { current, best };
 }
 
 // ストリークの更新（「〇」がついているかを基準にする）
 function updateStreak() {
-  const today = formatDateKey(new Date());
-  const yesterday = formatDateKey(new Date(Date.now() - 86400000));
-  
-  // 〇印のデータを取得
-  const dailyStatus = JSON.parse(localStorage.getItem("dailyRoutineStatus")) || {};
+  const dailyStatus = safeGetLocalStorage("dailyRoutineStatus", {});
+  const stats = calculateStreakStats(dailyStatus);
 
-  // 今日の〇がついているか確認
-  const isDoneToday = dailyStatus[today] === true;
+  streak.current = stats.current;
+  streak.best = stats.best;
 
-  if (isDoneToday && streak.lastDate !== today) {
-    if (streak.lastDate === yesterday) {
-      streak.current++;
-    } else {
-      // 昨日が〇でなければ1からやり直し
-      streak.current = 1;
-    }
-    streak.lastDate = today;
-    if (streak.current > streak.best) streak.best = streak.current;
-  } 
-  // 今日チェックを外して「〇」が消えた場合、今日の分をリセット
-  else if (!isDoneToday && streak.lastDate === today) {
-    // 連続記録が途切れる設定にする場合
-    streak.current = 0; 
+  const completedKeys = Object.keys(dailyStatus).filter(key => dailyStatus[key] === true);
+  if (completedKeys.length > 0) {
+    const dates = completedKeys.map(key => {
+      const [y, m, d] = key.split("-").map(Number);
+      return { key, time: new Date(y, m - 1, d, 12, 0, 0, 0).getTime() };
+    }).sort((a, b) => b.time - a.time);
+    streak.lastDate = dates[0].key;
+  } else {
     streak.lastDate = null;
   }
 
   localStorage.setItem("streak", JSON.stringify(streak));
+  updateLocalLastUpdated();
   
   // 画面表示の更新
   const streakEl = document.getElementById("streakDisplay");
@@ -944,31 +1271,13 @@ function renderTodaySummary() {
     `;
 }
 
-let weekdayRoutine = JSON.parse(localStorage.getItem("weekdayRoutine")) || [
-  "6:00 起床・準備",
-  "7:00 通学・インプット(両学長ライブ)",
-  "9:30~15:30 学校・資格勉強",
-  "18:00~23:30 プログラミング学習",
-  "24:00 就寝"
-];
-
-let weekendRoutine = JSON.parse(localStorage.getItem("weekendRoutine")) || [
-  "9:00 起床",
-  "10:00~12:00 復習・資格勉強",
-  "13:00~17:00 プログラミング・思考整理",
-  "18:00~22:00 自由時間・読書",
-  "24:00 就寝"
-];
-
-let currentRoutine = "weekday";
-let isEditing = false;
 
 function renderRoutine() {
   const list = document.getElementById("routineList");
   list.innerHTML = "";
   const data = currentRoutine === "weekday" ? weekdayRoutine : weekendRoutine;
   const progressKey = currentRoutine === "weekday" ? "weekdayProgress" : "weekendProgress";
-  let progressData = JSON.parse(localStorage.getItem(progressKey)) || [];
+  let progressData = safeGetLocalStorage(progressKey, []);
   
   data.forEach((item, i) => {
     const li = document.createElement("li");
@@ -986,6 +1295,7 @@ function renderRoutine() {
         data[i] = input.value;
         const storageKey = currentRoutine === "weekday" ? "weekdayRoutine" : "weekendRoutine";
         localStorage.setItem(storageKey, JSON.stringify(data));
+        updateLocalLastUpdated();
       };
       textSpan.appendChild(input);
     } else {
@@ -1005,6 +1315,7 @@ function renderRoutine() {
     check.addEventListener("change", () => {
       progressData[i] = check.checked;
       localStorage.setItem(progressKey, JSON.stringify(progressData));
+      updateLocalLastUpdated();
       const allDone = progressData.length === data.length && progressData.every(v => v === true)
       updateStreakLogic(allDone);
       renderRoutine();
@@ -1019,35 +1330,14 @@ function renderRoutine() {
 
 async function updateStreakLogic(allDone) {
   const today = formatDateKey(new Date());
-  // 以前のタスク形式の〇を削除する関数（removeCalendarRoutineDone）は不要になります
-  
-  let dailyStatus = JSON.parse(localStorage.getItem("dailyRoutineStatus")) || {};
-
-  if (allDone) {
-    dailyStatus[today] = true; // 今日を「完了」にする
-    const yesterday = formatDateKey(new Date(Date.now() - 86400000));
-    
-    // 継続日数の計算
-    if (streak.lastDate === yesterday) {
-      streak.current++;
-    } else if (streak.lastDate !== today) {
-      streak.current = 1;
-    }
-    streak.lastDate = today;
-  } else {
-    dailyStatus[today] = false; // これでカレンダーの〇が消える
-    streak.current = 0; // ストリークもリセット
-  }
+  let dailyStatus = safeGetLocalStorage("dailyRoutineStatus", {});
 
   dailyStatus[today] = allDone;
   localStorage.setItem("dailyRoutineStatus", JSON.stringify(dailyStatus));
-  localStorage.setItem("streak", JSON.stringify(streak));
+  updateLocalLastUpdated();
   
   renderCalendar(currentYear, currentMonth);
   updateStreak();
-  if (document.getElementById("streakDisplay")) {
-    document.getElementById("streakDisplay").textContent = `🔥 ${streak.current}日連続（最高：${streak.best}日）`;
-  }
   
   await syncData();
 }
@@ -1057,7 +1347,8 @@ function removeCalendarRoutineDone(dateKey) {
     tasks[dateKey] = tasks[dateKey].filter(t => t.title !== "〇");
     if (tasks[dateKey].length === 0) delete tasks[dateKey];
     localStorage.setItem("tasks", JSON.stringify(tasks));
-  renderCalendar(currentYear, currentMonth);
+    updateLocalLastUpdated();
+    renderCalendar(currentYear, currentMonth);
   }
 }
 
@@ -1116,7 +1407,10 @@ function updateRoutineClock() {
   const minutes = String(now.getMinutes()).padStart(2, "0");
   const seconds = String(now.getSeconds()).padStart(2, "0");
 
-  clock.textContent = `${year}/${month}/${date} (${day}) ${hours}:${minutes}:${seconds}`;
+  clock.innerHTML = `
+    <div class="clock-date">${year}/${month}/${date} (${day})</div>
+    <div class="clock-time">${hours}:${minutes}:${seconds}</div>
+  `;
 }
 
 updateRoutineClock();
@@ -1136,6 +1430,7 @@ async function markCalendarRoutineDone() {
       done: true
     });
     localStorage.setItem("tasks", JSON.stringify(tasks));
+    updateLocalLastUpdated();
   }
 
   renderCalendar(currentYear, currentMonth);
@@ -1168,6 +1463,7 @@ document.getElementById("saveRoutine").addEventListener("click", () => {
 
     localStorage.setItem("weekdayRoutine", JSON.stringify(defaultWeekday));
     localStorage.setItem("weekendRoutine", JSON.stringify(defaultWeekend));
+    updateLocalLastUpdated();
 
     weekdayRoutine = defaultWeekday;
     weekendRoutine = defaultWeekend;
@@ -1183,6 +1479,7 @@ document.getElementById("resetRoutine").addEventListener("click", () => {
 
   const resetProgress = new Array(data.length).fill(false);
   localStorage.setItem(progressKey, JSON.stringify(resetProgress));
+  updateLocalLastUpdated();
 
   updateStreakLogic(false);
   renderRoutine();
@@ -1193,21 +1490,6 @@ window.addEventListener("load", () => {
   renderRoutine();
 });
 
-
-window.addEventListener("DOMContentLoaded", () => {
-  updateGoalTexts();
-
-  const saveBtn = document.getElementById("saveGoals");
-  if (saveBtn) {
-    saveBtn.addEventListener("click", saveGoals);
-  }
-
-  const mCheck = document.getElementById("monthlyGoalCheck");
-  const wCheck = document.getElementById("weeklyGoalCheck");
-  if (mCheck) mCheck.addEventListener("change", () => toggleGoalDone("monthly"));
-  if (wCheck) wCheck.addEventListener("change", () => toggleGoalDone("weekly"));
-})
-
 function resetRoutineChecksIfNewDay() {
   const lastResetDate = localStorage.getItem("lastRoutineResetDate");
   const today = new Date().toISOString().split("T")[0];
@@ -1216,6 +1498,7 @@ function resetRoutineChecksIfNewDay() {
 
   localStorage.setItem("weekdayProgress", JSON.stringify([]));
   localStorage.setItem("weekendProgress", JSON.stringify([]));
+  updateLocalLastUpdated();
 
   localStorage.setItem("lastRoutineResetDate", today);
 
@@ -1225,23 +1508,6 @@ function resetRoutineChecksIfNewDay() {
 window.addEventListener("load", resetRoutineChecksIfNewDay);
 
 setInterval(resetRoutineChecksIfNewDay, 1000 * 60 * 60);
-
-function saveTasksAndUpdate(){
-  const selectedDate = document.querySelector(".calendar-day.selected");
-  if (!selectedDate) return;
-
-  const date = selectedDate.dataset.date;
-  const tasks = Array.from(document.querySelectorAll(".task-item inpur[type='text'"))
-  .map((input) => input.value.trim())
-  .filter((v) => v !== "");
-
-  localStorage.setItem(`tasks-${date}`,JSON.stringify(tasks));
-
-  renderCalender();
-  if (isToday(date)) {
-    renderTodayTasks();
-  }
-}
 
 function isToday(dateString) {
   const today = new Date();
@@ -1253,8 +1519,6 @@ function isToday(dateString) {
   );
 }
 
-loadGoals();
-updateRemainingDays();
 initCalendar();
 
 function renderCategories() {
@@ -1305,6 +1569,7 @@ async function deleteCategory(cat) {
 
 async function saveCategories() {
   localStorage.setItem("categories", JSON.stringify(categories));
+  updateLocalLastUpdated();
   renderCategories();
   await syncData();
 }
@@ -1317,7 +1582,6 @@ renderCategories();
 // タスク操作系
 window.deleteTask = deleteTask;
 window.toggleTaskComplete = toggleTaskComplete;
-window.saveTasksAndUpdate = saveTasksAndUpdate;
 
 // ルーティン・完了管理系
 window.markCalendarRoutineDone = markCalendarRoutineDone;
@@ -1327,16 +1591,23 @@ window.removeCalendarRoutineDone = removeCalendarRoutineDone;
 window.deleteCategory = deleteCategory;
 window.filterByCategory = (cat) => {
   const filterList = document.querySelectorAll("#filters li");
+  let targetFilter = cat;
+
   filterList.forEach(li => {
     const liCat = li.getAttribute("data-category");
     if (liCat === cat) {
-      li.classList.add("active");
+      if (li.classList.contains("active")) {
+        li.classList.remove("active");
+        targetFilter = null;
+      } else {
+        li.classList.add("active");
+      }
     } else {
       li.classList.remove("active");
     }
   });
 
-  renderCalendar(currentYear, currentMonth, cat);
+  renderCalendar(currentYear, currentMonth, targetFilter);
   renderWeeklyTasks();
 };
 
