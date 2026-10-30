@@ -201,7 +201,15 @@ const login = async () => {
   } catch (e) {
     console.error("Firebaseエラー詳細:", e.code, e.message);
     if (statusEl) {
-      statusEl.textContent = "ログインに失敗しました: " + e.message;
+      let msg = "ログインに失敗しました";
+      if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+        msg = "メールアドレスまたはパスワードが正しくありません";
+      } else if (e.code === "auth/invalid-email") {
+        msg = "有効なメールアドレスを入力してください";
+      } else if (e.code === "auth/too-many-requests") {
+        msg = "試行回数が多すぎます。しばらく待ってから再試行してください";
+      }
+      statusEl.textContent = msg;
     }
   }
 };
@@ -231,6 +239,11 @@ const signup = async () => {
     return;
   }
 
+  if (pass.length < 6) {
+    if (statusEl) statusEl.textContent = "パスワードは6文字以上で設定してください";
+    return;
+  }
+
   try {
     await createUserWithEmailAndPassword(auth, email, pass);
     if (statusEl) {
@@ -240,7 +253,15 @@ const signup = async () => {
   } catch (e) {
     if (statusEl) {
       statusEl.style.color = "";
-      statusEl.textContent = "登録失敗: " + e.message;
+      let msg = "登録に失敗しました";
+      if (e.code === "auth/email-already-in-use") {
+        msg = "このメールアドレスは既に登録されています";
+      } else if (e.code === "auth/invalid-email") {
+        msg = "有効なメールアドレスを入力してください";
+      } else if (e.code === "auth/weak-password") {
+        msg = "パスワードは6文字以上で入力してください";
+      }
+      statusEl.textContent = msg;
     }
   }
 };
@@ -662,7 +683,8 @@ function renderCalendar(year, month, filter = null) {
         if (searchQuery && !t.title.toLowerCase().includes(searchQuery)) return;
 
         const taskDiv = document.createElement("div");
-        taskDiv.classList.add("task", `cat-${t.category}`);
+        const safeCatClass = "cat-" + String(t.category || "").replace(/[^\w-]/g, "_");
+        taskDiv.classList.add("task", safeCatClass);
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
@@ -726,6 +748,7 @@ function updateProgressBar() {
 // ④ renderWeeklyTasks で完了済みタスクを除外
 function renderWeeklyTasks() {
   const listEl = document.getElementById("weeklyTaskList");
+  if (!listEl) return;
   listEl.innerHTML = "";
 
   const today = new Date();
@@ -747,7 +770,9 @@ function renderWeeklyTasks() {
   }
 
   if (weekTasks.length === 0) {
-    listEl.innerHTML = "<li>今週のタスクはありません。</li>";
+    const li = document.createElement("li");
+    li.textContent = "今週のタスクはありません。";
+    listEl.appendChild(li);
     return;
   }
 
@@ -755,10 +780,15 @@ function renderWeeklyTasks() {
 
   weekTasks.forEach(t => {
     const li = document.createElement("li");
-    li.innerHTML = `
-      <span>${t.date}｜${t.title}</span>
-      <span class="weekly-priority">[${t.priority}] ${t.category}</span>
-    `;
+    const spanTitle = document.createElement("span");
+    spanTitle.textContent = `${t.date}｜${t.title}`;
+
+    const spanPriority = document.createElement("span");
+    spanPriority.className = "weekly-priority";
+    spanPriority.textContent = ` [${t.priority}] ${t.category}`;
+
+    li.appendChild(spanTitle);
+    li.appendChild(spanPriority);
     listEl.appendChild(li);
   });
 }
@@ -798,6 +828,8 @@ saveBtn.addEventListener("click", async () => {
   const memo = document.getElementById("taskMemo").value;
 
   if (!title) return alert("タイトルを入力してください");
+  if (title.length > 200) return alert("タイトルは200文字以内で入力してください");
+  if (memo && memo.length > 2000) return alert("メモは2000文字以内で入力してください");
 
   if (!tasks[selectedDate]) tasks[selectedDate] = [];
 
@@ -894,30 +926,67 @@ function renderTaskList(date) {
   const list = document.getElementById("taskList");
   const title = document.getElementById("taskListTitle");
 
-  if (title) title.innerHTML = `${date} のタスク`;
+  if (title) title.textContent = `${date} のタスク`;
   if (list) list.innerHTML = "";
   if (section) section.classList.remove("hidden");
 
   if (!tasks[date] || tasks[date].length === 0) {
-    if (list) list.innerHTML = "<li>タスクはありません。</li>";
+    if (list) {
+      const emptyLi = document.createElement("li");
+      emptyLi.textContent = "タスクはありません。";
+      list.appendChild(emptyLi);
+    }
   } else {
     tasks[date].forEach((t, index) => {
       const li = document.createElement("li");
-      const checked = t.done ? "checked" : "";
-      const style = t.done ? "text-decoration: line-through; opacity: 0.6;" : "";
-      
-      li.innerHTML = `
-        <div style="${style}">
-          <input type="checkbox" class="task-check" ${checked} 
-                 onclick="window.toggleTaskComplete('${date}', ${index})">
-          <strong>${t.title}</strong> (${t.category}, ${t.priority})
-          <br><small>${t.progress}%｜${t.memo || "メモなし"}</small>
-        </div>
-        <div class="task-btns">
-          <button class="edit" onclick="editTask('${date}', ${index})">編集</button>
-          <button class="delete" onclick="deleteTask('${date}', ${index})">削除</button>
-        </div>
-      `;
+      const contentDiv = document.createElement("div");
+      if (t.done) {
+        contentDiv.style.textDecoration = "line-through";
+        contentDiv.style.opacity = "0.6";
+      }
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "task-check";
+      checkbox.checked = !!t.done;
+      checkbox.addEventListener("click", () => {
+        window.toggleTaskComplete(date, index);
+      });
+
+      const titleStrong = document.createElement("strong");
+      titleStrong.textContent = t.title;
+
+      const metaSpan = document.createElement("span");
+      metaSpan.textContent = ` (${t.category}, ${t.priority})`;
+
+      const br = document.createElement("br");
+      const small = document.createElement("small");
+      small.textContent = `${t.progress}%｜${t.memo || "メモなし"}`;
+
+      contentDiv.appendChild(checkbox);
+      contentDiv.appendChild(titleStrong);
+      contentDiv.appendChild(metaSpan);
+      contentDiv.appendChild(br);
+      contentDiv.appendChild(small);
+
+      const btnsDiv = document.createElement("div");
+      btnsDiv.className = "task-btns";
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "edit";
+      editBtn.textContent = "編集";
+      editBtn.addEventListener("click", () => editTask(date, index));
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "delete";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", () => deleteTask(date, index));
+
+      btnsDiv.appendChild(editBtn);
+      btnsDiv.appendChild(delBtn);
+
+      li.appendChild(contentDiv);
+      li.appendChild(btnsDiv);
       if (list) list.appendChild(li);
     });
   }
@@ -988,6 +1057,8 @@ const defaultSave = () => {
   const memo = document.getElementById("taskMemo").value;
 
   if (!title) return alert("タイトルを入力してください");
+  if (title.length > 200) return alert("タイトルは200文字以内で入力してください");
+  if (memo && memo.length > 2000) return alert("メモは2000文字以内で入力してください");
 
   if (!tasks[selectedDate]) tasks[selectedDate] = [];
   tasks[selectedDate].push({
@@ -1115,6 +1186,10 @@ async function saveGoals() {
   roadmap[`y${selectedGoalYear}`] = yearGoalValue;
 
   const savedGoals = safeGetLocalStorage("userGoals", {});
+  if (monthly.length > 1000 || weekly.length > 1000 || yearGoalValue.length > 1000) {
+    alert("目標は各1000文字以内で入力してください。");
+    return;
+  }
   savedGoals.monthly = monthly;
   savedGoals.weekly = weekly;
 
@@ -1248,32 +1323,60 @@ function renderTodaySummary() {
 
   const summary = document.getElementById("todaySummary");
   if (!summary) return;
+  summary.innerHTML = "";
+
+  const titleH3 = document.createElement("h3");
 
   if (total === 0) {
-    summary.innerHTML = `<h3>📅 今日の予定</h3><p style="padding:10px;">予定はありません。</p>`;
+    titleH3.textContent = "📅 今日の予定";
+    const p = document.createElement("p");
+    p.style.padding = "10px";
+    p.textContent = "予定はありません。";
+    summary.appendChild(titleH3);
+    summary.appendChild(p);
     return;
   }
 
-  summary.innerHTML = `
-    <h3>📅 今日の予定 (${done}/${total} 完了)</h3>
-    <ul class="today-task-list">
-      ${todayTasks.map((t, i) => `
-        <li style="text-decoration:${t.done ? 'line-through' : 'none'}; opacity:${t.done ? 0.6 : 1}">
-          <label style="cursor:pointer; display:flex; align-items:center;">
-            <input type="checkbox" ${t.done ? 'checked' : ''} 
-                   onclick="window.toggleTaskComplete('${todayKey}', ${i})" 
-                   style="margin-right:10px;">
-            ${t.title}
-          </label>
-        </li>
-      `).join('')}
-    </ul>
-    `;
+  titleH3.textContent = `📅 今日の予定 (${done}/${total} 完了)`;
+  summary.appendChild(titleH3);
+
+  const ul = document.createElement("ul");
+  ul.className = "today-task-list";
+
+  todayTasks.forEach((t, i) => {
+    const li = document.createElement("li");
+    li.style.textDecoration = t.done ? "line-through" : "none";
+    li.style.opacity = t.done ? "0.6" : "1";
+
+    const label = document.createElement("label");
+    label.style.cursor = "pointer";
+    label.style.display = "flex";
+    label.style.alignItems = "center";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = !!t.done;
+    checkbox.style.marginRight = "10px";
+    checkbox.addEventListener("click", () => {
+      window.toggleTaskComplete(todayKey, i);
+    });
+
+    const textSpan = document.createElement("span");
+    textSpan.textContent = t.title;
+
+    label.appendChild(checkbox);
+    label.appendChild(textSpan);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+
+  summary.appendChild(ul);
 }
 
 
 function renderRoutine() {
   const list = document.getElementById("routineList");
+  if (!list) return;
   list.innerHTML = "";
   const data = currentRoutine === "weekday" ? weekdayRoutine : weekendRoutine;
   const progressKey = currentRoutine === "weekday" ? "weekdayProgress" : "weekendProgress";
@@ -1291,6 +1394,7 @@ function renderRoutine() {
       input.type = "text";
       input.value = item;
       input.className = "edit-routine-input";
+      input.maxLength = 100;
       input.onchange = () => {
         data[i] = input.value;
         const storageKey = currentRoutine === "weekday" ? "weekdayRoutine" : "weekendRoutine";
@@ -1301,7 +1405,16 @@ function renderRoutine() {
     } else {
       const timeMatch = item.match(/^([0-9:~〜-]+)\s*(.*)/);
       if (timeMatch) {
-        textSpan.innerHTML = `<div class="routine-time">${timeMatch[1]}</div><div class="routine-content">${timeMatch[2]}</div>`;
+        const timeDiv = document.createElement("div");
+        timeDiv.className = "routine-time";
+        timeDiv.textContent = timeMatch[1];
+
+        const contentDiv = document.createElement("div");
+        contentDiv.className = "routine-content";
+        contentDiv.textContent = timeMatch[2];
+
+        textSpan.appendChild(timeDiv);
+        textSpan.appendChild(contentDiv);
       } else {
         textSpan.textContent = item;
       }
@@ -1532,10 +1645,24 @@ function renderCategories() {
     // 1. サイドバーのフィルター
     const li = document.createElement("li");
     li.setAttribute("data-category", cat);
-    li.innerHTML = `
-      <span onclick="filterByCategory('${cat}')" style="cursor: pointer; display: inline-block; width: 80%;">${cat}</span>
-      <button class="delete-cat-btn" onclick="deleteCategory('${cat}')">×</button>
-    `;
+
+    const span = document.createElement("span");
+    span.style.cursor = "pointer";
+    span.style.display = "inline-block";
+    span.style.width = "80%";
+    span.textContent = cat;
+    span.addEventListener("click", () => window.filterByCategory(cat));
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "delete-cat-btn";
+    delBtn.textContent = "×";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteCategory(cat);
+    });
+
+    li.appendChild(span);
+    li.appendChild(delBtn);
     filterList.appendChild(li);
 
     // 2. タスク作成モーダルの選択肢も更新
@@ -1550,8 +1677,15 @@ function renderCategories() {
 const addCategoryBtn = document.getElementById("addCategoryBtn");
 if (addCategoryBtn) {
   addCategoryBtn.onclick = () => {
-    const newCat = prompt("新しいカテゴリー名を入力してください");
-    if (newCat && !categories.includes(newCat)) {
+    const rawCat = prompt("新しいカテゴリー名を入力してください（30文字以内）");
+    if (!rawCat) return;
+    const newCat = rawCat.trim();
+    if (newCat.length === 0) return;
+    if (newCat.length > 30) {
+      alert("カテゴリー名は30文字以内で入力してください。");
+      return;
+    }
+    if (!categories.includes(newCat)) {
       categories.push(newCat);
       saveCategories();
     }

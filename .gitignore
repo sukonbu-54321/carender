@@ -8,12 +8,9 @@
 **/.env.local
 **/.env.*
 
-# Firebase 関連のキャッシュとプロジェクト情報
+# Firebase 関連のキャッシュ
 .firebase/
 .firebaserc
-firestore.indexes.json
-firestore.rules
-firebase.json
 
 # ログファイル
 *.log

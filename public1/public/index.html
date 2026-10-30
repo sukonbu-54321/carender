@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>スケジュールカレンダー</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,8 +15,8 @@
   <div id="login-section">
     <div class="login-card">
       <h2>ログイン</h2>
-      <input type="email" id="loginEmail" placeholder="メールアドレス">
-      <input type="password" id="loginPassword" placeholder="パスワード">
+      <input type="email" id="loginEmail" placeholder="メールアドレス" autocomplete="email">
+      <input type="password" id="loginPassword" placeholder="パスワード" autocomplete="current-password">
       <div class="login-btns">
         <button id="signupBtn" onclick="signup()">新規登録</button>
         <button id="loginBtn" onclick="login()">ログイン</button>
@@ -71,9 +72,9 @@
         <div class="card links-card">
           <h2>関連アプリ</h2>
           <div class="app-links">
-            <a href="https://thinktank-54321.web.app/" target="_blank" class="url-link">💡 知識ノートアプリ</a>
-            <a href="https://sukonbu-kakeibo.web.app/" target="_blank" class="url-link">💰 家計簿アプリ</a>
-            <a href="https://studyquest-54321.web.app/" target="_blank" class="url-link">🎒 勉強管理アプリ</a>
+            <a href="https://thinktank-54321.web.app/" target="_blank" rel="noopener noreferrer" class="url-link">💡 知識ノートアプリ</a>
+            <a href="https://sukonbu-kakeibo.web.app/" target="_blank" rel="noopener noreferrer" class="url-link">💰 家計簿アプリ</a>
+            <a href="https://studyquest-54321.web.app/" target="_blank" rel="noopener noreferrer" class="url-link">🎒 勉強管理アプリ</a>
           </div>
         </div>
 
